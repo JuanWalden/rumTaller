@@ -22,6 +22,23 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+// IMPORTANT: Firestore Security Rules
+// ------------------------------------
+// The following Firestore operations assume you have appropriate security rules
+// in place to protect user data. Ensure that users can only write to their
+// own profile document and cannot arbitrarily read/write other data.
+// Example rule structure (in your Firebase console -> Firestore Database -> Rules):
+//
+// service cloud.firestore {
+//   match /databases/{database}/documents {
+//     // Allow users to read and write only their own profile data
+//     match /apps/{appId}/users/{userId}/profile {
+//       allow read, write: if request.auth != null && request.auth.uid == userId;
+//     }
+//     // Add other rules for your application as needed
+//   }
+// }
+// ------------------------------------
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [loadingAuth, setLoadingAuth] = useState<boolean>(true);
@@ -40,18 +57,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (user) {
         setCurrentUser(user);
         setUserId(user.uid);
-        // Example: Save/update user profile in Firestore
-        // if (db && user.uid && !user.isAnonymous) {
-        //   try {
-        //     await setDoc(doc(db, `apps/${effectiveAppId}/users/${user.uid}/profile`), { 
-        //       email: user.email, 
-        //       lastLogin: new Date(),
-        //       uid: user.uid
-        //     }, { merge: true });
-        //   } catch (error) {
-        //     console.error("Error saving user profile:", error);
-        //   }
-        // }
+        // Save/update user profile in Firestore
+        if (db && user.uid && !user.isAnonymous) {
+          try {
+            await db.doc(`apps/${effectiveAppId}/users/${user.uid}/profile`).set({ 
+              email: user.email, 
+              lastLogin: new Date(),
+              uid: user.uid
+            }, { merge: true });
+          } catch (error) {
+            console.error("Error saving user profile:", error);
+          }
+        }
       } else {
         // No user signed in
         if (window.__initial_auth_token && auth) {
@@ -102,14 +119,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (!auth) throw new Error("Firebase Auth not initialized.");
     // FIX: Use auth.createUserWithEmailAndPassword (method on the auth compat instance)
     const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-    // User profile creation can be handled by onAuthStateChanged or here
-    // Example: if (db && userCredential.user.uid) {
-    //   await setDoc(doc(db, `apps/${effectiveAppId}/users/${userCredential.user.uid}/profile`), { 
-    //     email: userCredential.user.email, 
-    //     createdAt: new Date(),
-    //     uid: userCredential.user.uid 
-    //   });
-    // }
+    // User profile creation
+    if (db && userCredential.user && userCredential.user.uid) {
+      try {
+        await db.doc(`apps/${effectiveAppId}/users/${userCredential.user.uid}/profile`).set({ 
+          email: userCredential.user.email, 
+          createdAt: new Date(),
+          uid: userCredential.user.uid 
+        });
+      } catch (error) {
+        console.error("Error creating user profile:", error);
+      }
+    }
   };
 
   const logout = async (): Promise<void> => {
