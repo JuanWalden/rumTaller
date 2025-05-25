@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Header from '../Layout/Header';
 import TechniqueSelector from './TechniqueSelector';
 import ControlButtons from './ControlButtons';
@@ -15,47 +15,58 @@ const RuminationContent: React.FC = () => {
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
   const [selectedTechniqueKey, setSelectedTechniqueKey] = useState<string>(DEFAULT_TECHNIQUE_KEY);
 
+  const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const currentTechniqueDetails = TECHNIQUE_EXAMPLES[selectedTechniqueKey] || TECHNIQUE_EXAMPLES[DEFAULT_TECHNIQUE_KEY];
 
+  const clearExistingInterval = () => {
+    if (animationIntervalRef.current) {
+      clearInterval(animationIntervalRef.current);
+      animationIntervalRef.current = null;
+    }
+  };
+
   const startAnimation = useCallback(() => {
+    clearExistingInterval();
     setIsAnimating(true);
     setCurrentStep(0);
     setCompletedSteps(new Set());
     
     let stepCounter = 0;
-    const interval = setInterval(() => {
+    animationIntervalRef.current = setInterval(() => {
       setCompletedSteps(prev => new Set([...prev, stepCounter]));
       stepCounter++;
       if (stepCounter < STEPS_DATA.length) {
         setCurrentStep(stepCounter);
       } else {
-        clearInterval(interval);
+        clearExistingInterval();
         // Keep last step active visual for a bit longer before animation truly "ends"
         setTimeout(() => setIsAnimating(false), 1000); 
       }
     }, 2500);
-
-    // Cleanup function for the interval
-    return () => clearInterval(interval);
   }, []);
 
   const resetAnimation = useCallback(() => {
+    clearExistingInterval();
     setIsAnimating(false);
     setCurrentStep(0);
     setCompletedSteps(new Set());
-    // If there was an interval from startAnimation, it should be cleaned up
-    // by a potential re-run of startAnimation or component unmount.
-    // For direct reset, ensure any active interval is cleared if startAnimation doesn't handle it itself.
-    // However, startAnimation returns a cleanup, so it's self-contained.
   }, []);
 
-  // Effect to reset animation if the technique changes while animating
+  // Effect to reset animation if the technique changes
   useEffect(() => {
-    if (isAnimating) {
-      resetAnimation();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTechniqueKey]); // reset if technique changes
+    // When the technique changes, always reset the animation.
+    // resetAnimation will now also clear any ongoing interval.
+    resetAnimation();
+  }, [selectedTechniqueKey, resetAnimation]);
+
+  // Effect for component unmount cleanup
+  useEffect(() => {
+    // This effect only runs on mount and unmount
+    return () => {
+      clearExistingInterval();
+    };
+  }, []); // Empty dependency array
 
   return (
     <div className="max-w-6xl mx-auto px-2 sm:px-4">
